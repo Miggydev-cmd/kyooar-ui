@@ -3,23 +3,16 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
-  server: {
-    port: 5175,
-    host: true
-  },
-
   plugins: [
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'favicon.svg'],
+      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
       manifest: {
-        name: 'Soldier Inventory App',
-        short_name: 'InventoryApp',
-        start_url: '/',
-        display: 'standalone',
-        background_color: '#000000',
-        theme_color: '#00ffff',
+        name: 'Military Inventory System',
+        short_name: 'MIS',
+        description: 'Military Inventory Management System',
+        theme_color: '#ffffff',
         icons: [
           {
             src: 'pwa-192x192.png',
@@ -34,5 +27,20 @@ export default defineConfig({
         ]
       }
     })
-  ]
+  ],
+  server: {
+    port: 5175,
+    strictPort: true,
+    host: true,
+  },
+  resolve: {
+    alias: {
+      '@': '/src',
+    },
+  },
+  build: {
+    outDir: 'dist',
+    assetsDir: 'assets',
+    sourcemap: true,
+  },
 });

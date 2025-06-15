@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Html5Qrcode } from 'html5-qrcode';
-import axios from 'axios';
-import { BACKEND_URL } from '../services/api';
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
+import axiosInstance from '../services/axiosInstance';
+import { getBackendUrl } from '../services/api';
 
 const QRLoginPage = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [scanning, setScanning] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
+  const [qrDetected, setQrDetected] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -35,19 +36,22 @@ const QRLoginPage = () => {
     if (!scanning) return;
 
     setScanning(false);
+    setQrDetected(true);
     await stopScanner();
 
     try {
       console.log('Scanning QR code:', decodedText);
-      const response = await axios.post(`${BACKEND_URL}/api/auth/login/qr/`, {
+      const response = await axiosInstance.post(`${getBackendUrl()}/api/auth/login/qr/`, {
         id_code: decodedText
       });
       
-      if (response.data.token) {
+      if (response.data.access_token) {
         setSuccess('QR Code successfully scanned! Logging you in...');
         setError('');
-        localStorage.setItem('token', response.data.token);
+        localStorage.setItem('access_token', response.data.access_token);
+        localStorage.setItem('refresh_token', response.data.refresh_token);
         localStorage.setItem('user', JSON.stringify(response.data.user));
+        
         setTimeout(() => {
           navigate('/home', { replace: true });
         }, 2000);
@@ -56,6 +60,7 @@ const QRLoginPage = () => {
       console.error('Login error:', err);
       setError('Invalid QR code. Please try again.');
       setSuccess('');
+      setQrDetected(false);
       
       if (retryCount < MAX_RETRIES) {
         setRetryCount(prev => prev + 1);
@@ -76,7 +81,12 @@ const QRLoginPage = () => {
   const handleError = (err) => {
     console.error('QR Scan error from handler:', err);
     if (scanning) {
-      setError('Error during scan: ' + err.message || 'Unknown scanning error.');
+      let displayErrorMessage = 'Error during scan: ' + (err.message || 'Unknown scanning error.');
+      if (err.name === 'NotFoundException' || (err.message && err.message.includes('No MultiFormat Readers'))) {
+        displayErrorMessage = 'No QR code detected. Please ensure the QR code is clearly visible, well-lit, centered in the box, and fully within the green frame. Try adjusting the distance or angle.';
+        setQrDetected(false);
+      }
+      setError(displayErrorMessage);
       setSuccess('');
       setScanning(false);
       stopScanner();
@@ -89,36 +99,58 @@ const QRLoginPage = () => {
     setRetryCount(0);
     setError('');
     setSuccess('');
+    setQrDetected(false);
 
     html5QrCodeRef.current = new Html5Qrcode(qrReaderRegionId);
+    
+    // Calculate qrbox size dynamically based on the scanner-container's current width
+    const scannerContainer = document.getElementById("qr-reader-region");
+    const scannerWidth = scannerContainer ? scannerContainer.offsetWidth : 320; // Default to 320 if not found
+    const qrboxSize = Math.max(200, Math.min(scannerWidth * 0.8, 320)); // 80% of container width, with min/max
+
     const config = {
-      fps: 10,
-      qrbox: { width: 250, height: 250 },
+      fps: 20,
+      qrbox: { width: qrboxSize, height: qrboxSize },
       aspectRatio: 1.0,
-      disableFlip: false,
-      formatsToSupport: [ Html5Qrcode.Formats.QR_CODE ]
+      disableFlip: true,
+      formatsToSupport: [ Html5QrcodeSupportedFormats.QR_CODE ],
+      tryHarder: true
     };
+    console.log('Html5QrcodeScanner configuration:', config);
 
     try {
       const devices = await Html5Qrcode.getCameras();
+      console.log('Detected camera devices:', devices);
       if (devices && devices.length) {
-        console.log('Cameras available, starting scanner.');
+        console.log('Cameras available, starting scanner with device:', devices[0].id);
         await html5QrCodeRef.current.start(
           { facingMode: 'environment' },
           config,
           handleScan,
           handleError
         );
+        console.log('Html5QrcodeScanner start command executed.');
+
+        // Log actual video dimensions after scanner starts
+        const videoElement = document.getElementById(qrReaderRegionId)?.querySelector('video');
+        if (videoElement) {
+          videoElement.onloadedmetadata = () => {
+            console.log(`Video stream dimensions: ${videoElement.videoWidth}x${videoElement.videoHeight}`);
+          };
+        } else {
+          console.warn('Video element not found after scanner start.');
+        }
+
         setScanning(true);
         setError('');
       } else {
-        console.error('No cameras found.');
-        setError('No camera devices found on this system.');
+        console.error('No cameras found: devices array is empty or null.', devices);
+        setError('No camera devices found on this system. Please check your hardware.');
         setScanning(false);
       }
     } catch (err) {
-      console.error('Failed to start QR scanner:', err);
-      setError('Could not start camera: ' + err.message || 'Please check permissions and try again.');
+      console.error('Failed to start QR scanner during initialization:', err);
+      setError('Could not start camera. Please check permissions, ensure no other app is using the camera, and use a secure connection (HTTPS).');
       setSuccess('');
       setScanning(false);
     }
@@ -188,7 +220,7 @@ const QRLoginPage = () => {
         }
 
         .qr-login-page-container {
-            background: linear-gradient(135deg, #0f0f0f 0%, #1a1a1f 50%, #0f0f0f 100%);
+            background: var(--bg-primary);
             width: 100%;
             height: 100vh;
             position: fixed;
@@ -209,9 +241,9 @@ const QRLoginPage = () => {
           border-radius: 16px;
           overflow: hidden;
           padding: 2.5rem;
-          background: #1a1a1f;
+          background: var(--bg-secondary);
           box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-          border: 1px solid rgba(255, 255, 255, 0.1);
+          border: 1px solid var(--input-border);
           display: flex;
           flex-direction: column;
           align-items: center;
@@ -225,11 +257,11 @@ const QRLoginPage = () => {
           top: -50%;
           width: 200%;
           height: 200%;
-          background-color: #1a1a1a;
+          background-color: var(--bg-secondary);
           background-repeat: no-repeat;
           background-position: 0 0;
-          background-image: conic-gradient(transparent, #00f2ff, transparent 30%),
-                          conic-gradient(transparent, #ff2d75, transparent 30%);
+          background-image: conic-gradient(transparent, var(--accent-cyan), transparent 30%),
+                          conic-gradient(transparent, var(--accent-pink), transparent 30%);
           animation: rotate 6s linear infinite;
         }
 
@@ -241,7 +273,7 @@ const QRLoginPage = () => {
           top: 4px;
           width: calc(100% - 8px);
           height: calc(100% - 8px);
-          background: #1a1a1f;
+          background: var(--bg-secondary);
           border-radius: 14px;
           box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.3);
         }
@@ -252,19 +284,41 @@ const QRLoginPage = () => {
           margin: 0 auto;
           border-radius: 12px;
           overflow: hidden;
-          box-shadow: 0 0 30px rgba(0, 242, 255, 0.3);
-          border: 2px solid #00f2ff;
-          background-color: rgba(0,0,0,0.5);
+          box-shadow: 0 0 30px rgba(var(--accent-cyan-rgb), 0.3);
+          transition: border-color 0.3s ease-in-out, box-shadow 0.3s ease-in-out;
           height: 300px;
           display: flex;
           justify-content: center;
           align-items: center;
         }
 
+        .scanner-container.detected {
+          border: 2px solid var(--accent-green);
+          box-shadow: 0 0 30px rgba(var(--accent-green-rgb), 0.3);
+        }
+
+        .scanner-container.error {
+          border: 2px solid var(--accent-pink);
+          box-shadow: 0 0 30px rgba(var(--accent-pink-rgb), 0.3);
+        }
+
+        /* Style for the video element generated by html5-qrcode */
+        .scanner-container video {
+          width: 100% !important;
+          height: 100% !important;
+          object-fit: cover;
+          border-radius: 10px; /* Match container border-radius slightly */
+        }
+
+        /* Style for the canvas element generated by html5-qrcode */
+        .scanner-container canvas {
+          display: none; /* Hide the canvas overlay if not needed */
+        }
+
         .error-message {
-          background: rgba(255, 45, 85, 0.15);
-          border: 1px solid rgba(255, 45, 85, 0.4);
-          color: #ff5577;
+          background: rgba(var(--accent-pink-rgb), 0.15);
+          border: 1px solid rgba(var(--accent-pink-rgb), 0.4);
+          color: var(--accent-pink);
           padding: 1.2rem;
           border-radius: 8px;
           margin-top: 1.5rem;
@@ -276,9 +330,9 @@ const QRLoginPage = () => {
         }
 
         .success-message {
-          background: rgba(72, 187, 120, 0.15);
-          border: 1px solid rgba(72, 187, 120, 0.4);
-          color: #68d391;
+          background: rgba(var(--color-success-rgb), 0.15);
+          border: 1px solid rgba(var(--color-success-rgb), 0.4);
+          color: var(--color-success);
           padding: 1.2rem;
           border-radius: 8px;
           margin-top: 1.5rem;
@@ -290,7 +344,7 @@ const QRLoginPage = () => {
           font-size: 2rem;
           margin-bottom: 2rem;
           text-align: center;
-          color: white;
+          color: var(--text-primary);
           text-transform: uppercase;
           letter-spacing: 2px;
           font-weight: 700;
@@ -305,7 +359,7 @@ const QRLoginPage = () => {
           transform: translateX(-50%);
           width: 50px;
           height: 4px;
-          background: #00f2ff;
+          background: var(--accent-cyan);
           border-radius: 2px;
         }
 
@@ -313,9 +367,9 @@ const QRLoginPage = () => {
           position: absolute;
           top: 1.5rem;
           left: 1.5rem;
-          background: rgba(255, 255, 255, 0.1);
+          background: rgba(var(--text-primary-rgb), 0.1); /* Use text-primary for transparency */
           border: none;
-          color: white;
+          color: var(--text-primary);
           padding: 0.75rem 1.5rem;
           border-radius: 8px;
           cursor: pointer;
@@ -330,11 +384,49 @@ const QRLoginPage = () => {
         }
 
         .back-button:hover {
-          background: rgba(255, 255, 255, 0.2);
+          background: rgba(var(--text-primary-rgb), 0.2);
         }
 
         .back-button i {
           font-size: 0.9rem;
+        }
+
+        #qr-reader-region {
+          width: 100%;
+          min-height: 200px; /* Ensure visibility before video loads */
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          overflow: hidden;
+          border-radius: 8px;
+          background-color: rgba(0, 0, 0, 0.1); /* Subtle background for debugging */
+        }
+
+        #qr-reader-region video {
+          width: 100% !important;
+          height: 100% !important;
+          object-fit: contain !important;
+          transform: scaleX(-1); /* Flip horizontally for selfie-mode feel */
+        }
+
+        #qr-reader-region img {
+          max-width: 100%;
+          max-height: 100%;
+          object-fit: contain;
+        }
+
+        .qr-login-container {
+          width: 100%;
+          max-width: 400px;
+          padding: 2rem;
+        }
+
+        .qr-instructions {
+          margin-top: 1rem;
+          color: var(--text-secondary);
+          font-size: 0.95rem;
+          text-align: center;
+          line-height: 1.4;
         }
       `}</style>
       <button className="back-button" onClick={handleBackToLogin}>
@@ -343,16 +435,24 @@ const QRLoginPage = () => {
       </button>
       <div className="qr-box">
         <h2 className="qr-title">QR Login</h2>
-        <div className="scanner-container">
-          <div id={qrReaderRegionId} style={{ width: '100%' }} />
+        <div className={`scanner-container ${qrDetected ? 'detected' : error ? 'error' : ''}`}>
+          <div id={qrReaderRegionId} style={{ width: '100%', height: '100%' }} />
         </div>
+        {scanning && !error && !qrDetected && (
+          <p className="qr-instructions mt-4">Center the QR code in the box.</p>
+        )}
         {error && (
           <div className="error-message">
-            {error}
+            <div>{error}</div>
+            {!scanning && error.includes('Could not start camera') && (
+              <div className="text-xs text-gray-400 mt-2">
+                Please ensure you have granted camera permission and are using a secure connection (HTTPS).
+              </div>
+            )}
             {!scanning && (
               <button
                 onClick={resetScanner}
-                className="mt-3 px-5 py-2.5 bg-[#ff2d55] text-white rounded-md hover:bg-[#ff1a45] transition-colors font-medium"
+                className="mt-3 px-5 py-2.5 bg-[var(--accent-pink)] text-white rounded-md hover:bg-[var(--accent-pink)] transition-colors font-medium"
               >
                 Try Again
               </button>

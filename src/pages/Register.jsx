@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import axios from 'axios';
-import { BACKEND_URL } from '../services/api';
+import axiosInstance from '../services/axiosInstance';
+import { getBackendUrl } from '../services/api';
 import QRCode from 'react-qr-code';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -10,6 +10,7 @@ const Register = () => {
     username: '',
     password: '',
     confirm_password: '',
+    email: '',
     full_name: '',
     rank: '',
     unit: '',
@@ -24,7 +25,29 @@ const Register = () => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [qrValue, setQrValue] = useState('');
   const [showQrCode, setShowQrCode] = useState(false);
+  const [showQrModal, setShowQrModal] = useState(false);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    // Check if user is already registered
+    const storedUser = localStorage.getItem('registered_user');
+    if (storedUser) {
+      const userData = JSON.parse(storedUser);
+      // Pre-fill form with stored data
+      setFormData(prev => ({
+        ...prev,
+        username: userData.username || '',
+        email: userData.email || '',
+        full_name: userData.full_name || '',
+        rank: userData.rank || '',
+        unit: userData.unit || '',
+        phone_number: userData.phone_number || '',
+        birth_date: userData.birth_date || '',
+        role: userData.role || '',
+        id_code: userData.id_code || '',
+      }));
+    }
+  }, []);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -45,26 +68,83 @@ const Register = () => {
     }
     try {
       const formDataToSend = { ...formData };
-      // delete formDataToSend.confirm_password;
       formDataToSend['remember_me'] = rememberMe;
-      const response = await axios.post(`${BACKEND_URL}/api/register/`, formDataToSend, {
+      const response = await axiosInstance.post(`${getBackendUrl()}/api/register/`, formDataToSend, {
         headers: { 'Content-Type': 'application/json' },
         timeout: 10000,
       });
-      if (response.data.token) {
+      if (response.data.access_token) {
+        // Store user data
         localStorage.setItem('registered_user', JSON.stringify(response.data.user));
+        
+        // Store tokens based on remember me preference
         if (rememberMe) {
-          localStorage.setItem('token', response.data.token);
+          localStorage.setItem('access_token', response.data.access_token);
+          localStorage.setItem('refresh_token', response.data.refresh_token);
           localStorage.setItem('user', JSON.stringify(response.data.user));
         } else {
-          sessionStorage.setItem('token', response.data.token);
+          sessionStorage.setItem('access_token', response.data.access_token);
+          sessionStorage.setItem('refresh_token', response.data.refresh_token);
           sessionStorage.setItem('user', JSON.stringify(response.data.user));
         }
+        
+        // Clear any existing session data if switching storage types
+        if (rememberMe) {
+          sessionStorage.removeItem('access_token');
+          sessionStorage.removeItem('refresh_token');
+          sessionStorage.removeItem('user');
+        } else {
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('refresh_token');
+          localStorage.removeItem('user');
+        }
+        
         navigate('/login', { replace: true });
       }
     } catch (err) {
       console.error('Registration failed:', err.response?.data || err.message);
-      setError('Registration failed. Please try again.');
+      let errorMessage = 'Registration failed. Please try again.';
+
+      if (err.response?.data) {
+        const errorData = err.response.data;
+        
+        // Handle validation errors
+        if (errorData.details) {
+          // Handle field-specific errors
+          const fieldErrors = Object.entries(errorData.details)
+            .map(([field, errors]) => {
+              if (Array.isArray(errors)) {
+                return errors.map(error => {
+                  // Format field names for better readability
+                  const formattedField = field.split('_').map(word => 
+                    word.charAt(0).toUpperCase() + word.slice(1)
+                  ).join(' ');
+                  
+                  // Handle specific error messages
+                  if (error.includes('already exists')) {
+                    return `${formattedField} is already taken.`;
+                  }
+                  return `${formattedField}: ${error}`;
+                }).join('\n');
+              }
+              return `${field}: ${errors}`;
+            })
+            .filter(Boolean)
+            .join('\n');
+
+          if (fieldErrors) {
+            errorMessage = fieldErrors;
+          }
+        } else if (errorData.error) {
+          errorMessage = errorData.error;
+        } else if (errorData.message) {
+          errorMessage = errorData.message;
+        } else if (errorData.detail) {
+          errorMessage = errorData.detail;
+        }
+      }
+
+      setError(errorMessage);
     }
   };
 
@@ -108,7 +188,7 @@ const Register = () => {
   ];
 
   return (
-    <div className="fixed inset-0 w-full h-full bg-[#0f0f0f] flex items-center justify-center">
+    <div className="fixed inset-0 w-full h-full flex items-center justify-center">
       <style>{`
         @import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css');
 
@@ -116,7 +196,7 @@ const Register = () => {
           margin: 0;
           padding: 0;
           min-height: 100vh;
-          background: #0f0f0f;
+          background: var(--bg-primary);
           overflow: hidden;
         }
 
@@ -129,49 +209,27 @@ const Register = () => {
         .register-box {
           position: relative;
           z-index: 0;
-          width: 600px;
+          width: 780px;
           max-width: 95%;
           height: auto;
-          border-radius: 12px;
+          max-height: 85vh;
+          border-radius: 28px;
           overflow: hidden;
-          padding: 1.2rem;
-          background: #1a1a1f;
-          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+          padding: 2.5rem;
+          background: #fdfdfd;
+          box-shadow: 0 4px 25px rgba(0, 0, 0, 0.07);
+          border: 1px solid #ebebeb;
         }
 
-        .register-box::before {
-          content: '';
-          position: absolute;
-          z-index: -2;
-          left: -50%;
-          top: -50%;
-          width: 200%;
-          height: 200%;
-          background-color: #1a1a1a;
-          background-repeat: no-repeat;
-          background-position: 0 0;
-          background-image: conic-gradient(transparent, #00f2ff, transparent 30%),
-                          conic-gradient(transparent, #ff2d75, transparent 30%);
-          animation: rotate 4s linear infinite;
-        }
-
+        .register-box::before,
         .register-box::after {
-          content: '';
-          position: absolute;
-          z-index: -1;
-          left: 6px;
-          top: 6px;
-          width: calc(100% - 12px);
-          height: calc(100% - 12px);
-          background: #1a1a1f;
-          border-radius: 10px;
-          box-shadow: inset 0 0 32px rgba(0, 0, 0, 0.2);
+          display: none;
         }
 
         .form-grid {
           display: grid;
           grid-template-columns: 1fr 1fr;
-          gap: 1rem;
+          gap: 1.2rem;
           position: relative;
           z-index: 1;
         }
@@ -179,41 +237,33 @@ const Register = () => {
         .form-column {
           display: flex;
           flex-direction: column;
-          gap: 0.5rem;
+          gap: 0.6rem;
         }
 
         .input-group {
-          margin-bottom: 0.1rem;
+          margin-bottom: 0.4rem;
         }
 
         .input-group-label {
-          color: rgba(255,255,255,0.9);
-          font-size: 0.65rem;
+          color: #555;
+          font-size: 0.8rem;
           font-weight: 500;
           text-transform: uppercase;
-          letter-spacing: 1px;
+          letter-spacing: 0.8px;
           margin-bottom: 0.3rem;
           display: block;
           position: relative;
-          padding-left: 0.5rem;
+          padding-left: 0;
         }
 
         .input-group-label::before {
-          content: '';
-          position: absolute;
-          left: 0;
-          top: 50%;
-          transform: translateY(-50%);
-          width: 2px;
-          height: 12px;
-          background: #00f2ff;
-          border-radius: 2px;
+          display: none;
         }
 
         .input-box {
           width: 100%;
-          height: 30px;
-          margin-bottom: 0.3rem;
+          height: 38px;
+          margin-bottom: 0.4rem;
           position: relative;
         }
 
@@ -221,74 +271,90 @@ const Register = () => {
         .input-box select {
           width: 100%;
           height: 100%;
-          background: rgba(255, 255, 255, 0.03);
-          border: 2px solid rgba(255,255,255,0.1);
+          background: #fff;
+          border: 1px solid #dcdcdc;
           outline: none;
-          border-radius: 8px;
-          font-size: 0.75rem;
-          color: #fff;
-          padding: 0 0.75rem;
+          border-radius: 10px;
+          font-size: 0.9rem;
+          color: #333;
+          padding: 0 0.8rem;
           transition: all 0.3s ease;
         }
 
         .input-box input:focus,
         .input-box select:focus {
-          border-color: #00f2ff;
-          background: rgba(0, 242, 255, 0.03);
-          box-shadow: 0 0 0 4px rgba(0, 242, 255, 0.1);
+          border-color: #79b8f3;
+          background: #fff;
+          box-shadow: 0 0 0 2px rgba(121, 184, 243, 0.3);
         }
 
         .input-box input::placeholder {
-          color: rgba(255,255,255,0.35);
+          color: #aaa;
           font-size: 0.9rem;
         }
 
         .input-box select {
+          width: 100%;
+          height: 100%;
+          background: #fff;
+          border: 1px solid #dcdcdc;
+          outline: none;
+          border-radius: 10px;
+          font-size: 0.9rem;
+          color: #333;
+          padding: 0 0.8rem;
+          transition: all 0.3s ease;
           appearance: none;
-          background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.4)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+          -webkit-appearance: none;
+          -moz-appearance: none;
+          background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23555' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
           background-repeat: no-repeat;
-          background-position: right 1rem center;
-          background-size: 1.2em;
-          padding-right: 3rem;
+          background-position: right 0.7rem center;
+          background-size: 1em;
+          padding-right: 2.2rem;
+        }
+
+        .input-box select:focus {
+          border-color: #79b8f3;
+          background-color: #fff;
+          box-shadow: 0 0 0 2px rgba(121, 184, 243, 0.3);
         }
 
         .input-box select option {
-          background-color: #1a1a1f;
-          color: #fff;
-          padding: 1rem;
+          background-color: #fff;
+          color: #333;
+          padding: 0.8rem;
           font-size: 0.9rem;
         }
 
+        .input-box select:hover {
+          border-color: #79b8f3;
+        }
+
         .input-box input[type="date"] {
-          color-scheme: dark;
-          padding-right: 1rem;
+          color-scheme: light;
+          padding-right: 0.8rem;
         }
 
         .input-box input[type="date"]::-webkit-calendar-picker-indicator {
-          filter: invert(1);
-          opacity: 0.5;
+          filter: none;
+          opacity: 0.7;
           cursor: pointer;
         }
 
         .upload-box {
-          border: 2px dashed rgba(255,255,255,0.1);
+          border: 1px dashed #ccc;
           border-radius: 8px;
           padding: 1rem;
-          text-align: center;
-          cursor: pointer;
-          transition: all 0.3s ease;
-          min-height: 110px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          background: rgba(255, 255, 255, 0.02);
-          margin-bottom: 1rem;
+          min-height: 100px;
+          background: #fff;
+          margin-bottom: 0.8rem;
         }
 
         .upload-box:hover {
-          border-color: #00f2ff;
-          background: rgba(0, 242, 255, 0.02);
-          transform: translateY(-2px);
+          border-color: #79b8f3;
+          background: #f5fafd;
+          transform: translateY(-1px);
         }
 
         .preview-image {
@@ -300,59 +366,59 @@ const Register = () => {
 
         .register-button {
           width: 100%;
-          height: 32px;
+          height: 42px;
           border: none;
           outline: none;
-          border-radius: 8px;
-          background: linear-gradient(135deg, #00f2ff, #00d4e0);
-          color: #1a1a1f;
-          font-size: 0.8rem;
+          border-radius: 10px;
+          background: #1a73e8;
+          color: #fff;
+          font-size: 0.95rem;
           font-weight: 600;
           letter-spacing: 0.5px;
           cursor: pointer;
           transition: all 0.3s ease;
-          margin-top: 0.4rem;
+          margin-top: 0.8rem;
           text-transform: uppercase;
-          box-shadow: 0 4px 12px rgba(0, 242, 255, 0.3);
+          box-shadow: 0 2px 8px rgba(26, 115, 232, 0.15);
         }
 
         .register-button:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 6px 16px rgba(0, 242, 255, 0.4);
+          transform: translateY(-1px);
+          box-shadow: 0 4px 10px rgba(26, 115, 232, 0.25);
         }
 
         .register-button:active {
           transform: translateY(0);
-          box-shadow: 0 2px 8px rgba(0, 242, 255, 0.3);
+          box-shadow: 0 1px 4px rgba(26, 115, 232, 0.15);
         }
 
         .login-link {
           text-align: center;
-          margin-top: 1rem;
-          font-size: 0.8rem;
-          color: rgba(255, 255, 255, 0.7);
+          margin-top: 0.9rem;
+          font-size: 0.82rem;
+          color: #777;
         }
 
         .login-link a {
-          color: #00f2ff;
+          color: #1a73e8;
           text-decoration: none;
-          margin-left: 0.5rem;
+          margin-left: 0.4rem;
           font-weight: 500;
           transition: all 0.3s ease;
         }
 
         .login-link a:hover {
-          color: #33f5ff;
-          text-decoration: none;
+          color: #1a73e8;
+          text-decoration: underline;
         }
 
         h2.register-title {
-          font-size: 1.5rem;
-          margin-bottom: 1.5rem;
+          font-size: 1.6rem;
+          margin-bottom: 1.2rem;
           text-align: center;
-          color: white;
+          color: #333;
           text-transform: uppercase;
-          letter-spacing: 2px;
+          letter-spacing: 1.8px;
           font-weight: 700;
           position: relative;
         }
@@ -360,30 +426,30 @@ const Register = () => {
         h2.register-title::after {
           content: '';
           position: absolute;
-          bottom: -0.5rem;
+          bottom: -0.4rem;
           left: 50%;
           transform: translateX(-50%);
-          width: 40px;
+          width: 30px;
           height: 3px;
-          background: #00f2ff;
+          background: #1a73e8;
           border-radius: 2px;
         }
 
         .remember-me {
-          margin: 0.8rem 0;
-          font-size: 0.75rem;
+          margin: 0.6rem 0;
+          font-size: 0.82rem;
           display: flex;
           align-items: center;
           gap: 0.5rem;
-          color: rgba(255, 255, 255, 0.8);
+          color: #777;
         }
 
         .remember-me input[type="checkbox"] {
           width: 14px;
           height: 14px;
-          accent-color: #00f2ff;
+          accent-color: #1a73e8;
           cursor: pointer;
-          margin-right: 0.5rem;
+          margin-right: 0.4rem;
         }
 
         .remember-me label {
@@ -395,144 +461,62 @@ const Register = () => {
           position: relative;
           margin-bottom: 0.4rem;
           width: 100%;
-          height: 30px;
+          height: 38px;
         }
 
         .password-input-container input {
           width: 100%;
           height: 100%;
-          background: rgba(255, 255, 255, 0.03);
-          border: 2px solid rgba(255,255,255,0.1);
+          background: #fff;
+          border: 1px solid #dcdcdc;
           outline: none;
-          border-radius: 8px;
-          font-size: 0.75rem;
-          color: #fff;
-          padding: 0 2rem 0 0.75rem;
+          border-radius: 10px;
+          font-size: 0.9rem;
+          color: #333;
+          padding: 0 2.2rem 0 0.8rem;
           transition: all 0.3s ease;
         }
 
         .password-input-container input:focus {
-          border-color: #00f2ff;
-          background: rgba(0, 242, 255, 0.03);
-          box-shadow: 0 0 0 4px rgba(0, 242, 255, 0.1);
+          border-color: #79b8f3;
+          background: #fff;
+          box-shadow: 0 0 0 2px rgba(121, 184, 243, 0.3);
         }
 
         .password-toggle {
           position: absolute;
-          right: 0.75rem;
+          right: 0.8rem;
           top: 50%;
           transform: translateY(-50%);
           cursor: pointer;
-          color: rgba(255, 255, 255, 0.4);
+          color: #777;
           transition: all 0.3s ease;
           z-index: 2;
-          font-size: 0.8rem;
+          font-size: 0.85rem;
         }
 
         .password-toggle:hover {
-          color: #00f2ff;
+          color: #1a73e8;
         }
 
         .error-message {
-          background: rgba(255, 45, 85, 0.1);
-          border: 1px solid rgba(255, 45, 85, 0.3);
-          color: #ff2d55;
-          padding: 1rem 1.2rem;
-          border-radius: 12px;
-          margin-bottom: 1.5rem;
-          font-size: 0.9rem;
+          background: rgba(255, 235, 235, 0.7);
+          border: 1px solid rgba(255, 150, 150, 0.5);
+          color: #cc0000;
+          padding: 0.8rem 1rem;
+          border-radius: 10px;
+          margin-bottom: 0.8rem;
+          font-size: 0.85rem;
           display: flex;
-          align-items: center;
-          gap: 0.5rem;
+          align-items: flex-start;
+          gap: 0.4rem;
+          white-space: pre-line;
         }
 
         .error-message::before {
           content: '⚠️';
-          font-size: 1.1rem;
-        }
-
-        .password-requirements-modal {
-          position: fixed;
-          inset: 0;
-          background: rgba(0, 0, 0, 0.8);
-          backdrop-filter: blur(8px);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          z-index: 1000;
-          opacity: 0;
-          visibility: hidden;
-          transition: all 0.3s ease;
-        }
-
-        .password-requirements-modal.show {
-          opacity: 1;
-          visibility: visible;
-        }
-
-        .password-requirements-content {
-          background: #1c1c1f;
-          border: 2px solid #00f2ff;
-          border-radius: 12px;
-          padding: 2rem;
-          width: 90%;
-          max-width: 400px;
-          position: relative;
-          transform: translateY(-20px);
-          transition: all 0.3s ease;
-        }
-
-        .password-requirements-modal.show .password-requirements-content {
-          transform: translateY(0);
-        }
-
-        .requirement {
-          display: flex;
-          align-items: center;
-          gap: 0.75rem;
-          color: #a0aec0;
-          margin-bottom: 1rem;
           font-size: 1rem;
-        }
-
-        .requirement i {
-          width: 24px;
-          height: 24px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border-radius: 50%;
-          font-size: 0.8rem;
-        }
-
-        .requirement i.fa-check {
-          background: #48bb78;
-          color: #fff;
-        }
-
-        .requirement i.fa-times {
-          background: #f56565;
-          color: #fff;
-        }
-
-        .requirement.met {
-          color: #48bb78;
-        }
-
-        .close-requirements {
-          position: absolute;
-          top: 1rem;
-          right: 1rem;
-          background: none;
-          border: none;
-          font-size: 1.2rem;
-          color: rgba(255,255,255,0.6);
-          cursor: pointer;
-          transition: color 0.2s ease;
-        }
-
-        .close-requirements:hover {
-          color: #fff;
+          margin-top: 0.1rem;
         }
 
         .qr-box {
@@ -544,30 +528,193 @@ const Register = () => {
         }
 
         .qr-box > div {
-           background: transparent;
-           padding: 6px;
-           border-radius: 8px;
+           background: #fff;
+           padding: 12px;
+           border-radius: 20px;
+           box-shadow: 0 1px 4px rgba(0,0,0,0.08);
         }
 
         .qr-box .text-xs {
-          margin-top: 0.4rem;
+          margin-top: 0.3rem;
+          font-size: 0.82rem;
+        }
+
+        .mb-4.p-4.bg-green-100 {
+          padding: 1rem;
+          background: #e9ffe9;
+          border: 1px solid #cceccc;
+          color: #338833;
+          border-radius: 18px;
+        }
+
+        .block.text-sm.font-medium.text-gray-700 {
+            color: #555;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+        }
+        .text-red-500 {
+            color: #cc0000;
+        }
+        .mt-1.block.w-full.px-3.py-2.border.border-gray-300.rounded-md.shadow-sm.focus\:outline-none.focus\:ring-red-500.focus\:border-red-500 {
+            background: #fff;
+            border: 1px solid #dcdcdc;
+            border-radius: 10px;
+            font-size: 0.9rem;
+            color: #333;
+            padding: 0 0.8rem;
+            box-shadow: none;
+        }
+        .mt-1.block.w-full.px-3.py-2.pr-10.border.border-gray-300.rounded-md.shadow-sm.focus\:outline-none.focus\:ring-red-500.focus\:border-red-500 {
+            background: #fff;
+            border: 1px solid #dcdcdc;
+            border-radius: 10px;
+            font-size: 0.9rem;
+            color: #333;
+            padding: 0 2.2rem 0 0.8rem;
+            box-shadow: none;
+        }
+        .px-4.py-2.bg-blue-500.text-white.rounded-md.hover\:bg-blue-600.transition-colors.duration-200 {
+            background: #1a73e8;
+            color: #fff;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            padding: 0.6rem 1rem;
+            box-shadow: 0 1px 4px rgba(26, 115, 232, 0.15);
+        }
+        .px-4.py-2.bg-blue-500.text-white.rounded-md.hover\:bg-blue-600.transition-colors.duration-200:hover {
+            box-shadow: 0 2px 8px rgba(26, 115, 232, 0.25);
+        }
+        .text-\[\#00f2ff\] {
+            color: #1a73e8;
         }
 
         @media (max-width: 768px) {
           .form-grid {
             grid-template-columns: 1fr;
-            gap: 1rem;
+            gap: 0.8rem;
           }
 
           .register-box {
             width: 95%;
-            padding: 0.8rem;
+            max-height: 95vh;
+            padding: 1.2rem;
+            border-radius: 15px;
           }
 
           h2.register-title {
             font-size: 1.3rem;
-            margin-bottom: 1.2rem;
+            margin-bottom: 1rem;
           }
+        }
+
+        @media (min-width: 769px) and (max-width: 1024px) and (orientation: landscape) {
+          .register-box {
+            width: 90%;
+            max-width: 750px;
+            max-height: 88vh;
+            padding: 2rem;
+          }
+          .form-grid {
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+          }
+        }
+
+        @media (min-width: 1025px) {
+          .register-box {
+            width: 780px;
+            max-width: 95%;
+            max-height: 85vh;
+            padding: 2.5rem;
+          }
+          .form-grid {
+            gap: 1.2rem;
+          }
+        }
+
+        .qr-code-display {
+          max-width: 100%;
+          overflow: hidden;
+          margin: 0.2rem 0;
+          cursor: pointer;
+          transition: transform 0.2s ease;
+        }
+
+        .qr-code-display:hover {
+          transform: scale(1.02);
+        }
+
+        .qr-modal {
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background: rgba(0, 0, 0, 0.7);
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          z-index: 1000;
+          opacity: 0;
+          visibility: hidden;
+          transition: all 0.3s ease;
+        }
+
+        .qr-modal.active {
+          opacity: 1;
+          visibility: visible;
+        }
+
+        .qr-modal-content {
+          background: white;
+          padding: 2rem;
+          border-radius: 12px;
+          text-align: center;
+          transform: scale(0.9);
+          transition: transform 0.3s ease;
+          max-width: 90%;
+          max-height: 90vh;
+          overflow: auto;
+          position: relative;
+          z-index: 1001;
+        }
+
+        .qr-modal-close {
+          position: absolute;
+          top: 1rem;
+          right: 1rem;
+          background: white;
+          border: none;
+          width: 30px;
+          height: 30px;
+          border-radius: 50%;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 1.2rem;
+          color: #333;
+          transition: all 0.2s ease;
+          z-index: 1002;
+        }
+
+        .qr-modal-close:hover {
+          background: #f0f0f0;
+          transform: rotate(90deg);
+        }
+
+        .qr-modal-title {
+          font-size: 1.2rem;
+          font-weight: 600;
+          margin-bottom: 1rem;
+          color: #333;
+        }
+
+        .qr-modal-description {
+          font-size: 0.9rem;
+          color: #666;
+          margin-top: 1rem;
         }
       `}</style>
       <div className="register-box">
@@ -591,6 +738,16 @@ const Register = () => {
                     name="username"
                     placeholder="Username"
                     value={formData.username}
+                    onChange={handleChange}
+                    required
+                  />
+                </div>
+                <div className="input-box">
+                  <input
+                    type="email"
+                    name="email"
+                    placeholder="Email"
+                    value={formData.email}
                     onChange={handleChange}
                     required
                   />
@@ -723,17 +880,57 @@ const Register = () => {
                 </button>
 
                 {showQrCode && qrValue && (
-                  <div className="qr-box">
-                    <div style={{ background: 'transparent', padding: 6, borderRadius: 8 }}>
-                      <QRCode
-                        value={qrValue}
-                        size={150}
-                        bgColor="transparent"
-                        fgColor="#00f2ff"
-                      />
-                      <div className="text-xs text-cyan-400 mt-2 break-all">{qrValue}</div>
+                  <>
+                    <div 
+                      className="qr-code-display mb-1 p-1 rounded-lg flex flex-col items-center" 
+                      style={{ backgroundColor: '#ffffff' }}
+                      onClick={() => setShowQrModal(true)}
+                    >
+                      <h3 className="text-xs font-semibold mb-0.5">QR Code</h3>
+                      <div className="p-0.5" style={{ background: '#ffffff' }}>
+                        <QRCode
+                          id="qr-code-value"
+                          value={qrValue}
+                          size={80}
+                          level="H"
+                          bgColor="transparent"
+                          fgColor="#000000"
+                        />
+                      </div>
+                      <p className="text-[10px] text-gray-500 mt-0.5">Click to enlarge</p>
                     </div>
-                  </div>
+
+                    <div className={`qr-modal ${showQrModal ? 'active' : ''}`}>
+                      <button 
+                        className="qr-modal-close"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowQrModal(false);
+                        }}
+                      >
+                        ×
+                      </button>
+                      <div 
+                        className="qr-modal-content"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <h3 className="qr-modal-title">Your QR Code</h3>
+                        <div style={{ background: '#ffffff', padding: '1rem', borderRadius: '8px' }}>
+                          <QRCode
+                            value={qrValue}
+                            size={256}
+                            level="H"
+                            bgColor="transparent"
+                            fgColor="#000000"
+                          />
+                        </div>
+                        <p className="qr-modal-description">
+                          This QR code contains your unique identification number.<br />
+                          Keep it safe and use it for identification purposes.
+                        </p>
+                      </div>
+                    </div>
+                  </>
                 )}
               </div>
 

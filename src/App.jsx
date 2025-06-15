@@ -1,45 +1,14 @@
 // src/App.jsx
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import Login from './pages/Login';
-import Register from './pages/Register';
-import HomePage from './pages/HomePage';
-import QRLoginPage from './pages/QRLoginPage';
-import InventoryPage from './pages/InventoryPage';
-import './App.css';
+import { BrowserRouter as Router } from 'react-router-dom';
+import AppContent from './AppContent'; // Import the new AppContent component
 
-const PrivateRoute = ({ children }) => {
-  const token = localStorage.getItem('token');
-  return token ? children : <Navigate to="/login" />;
-};
-
-function App() {
+const App = () => {
   return (
     <Router>
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
-        <Route path="/qr-login" element={<QRLoginPage />} />
-        <Route
-          path="/home"
-          element={
-            <PrivateRoute>
-              <HomePage />
-            </PrivateRoute>
-          }
-        />
-        <Route
-          path="/inventory"
-          element={
-            <PrivateRoute>
-              <InventoryPage />
-            </PrivateRoute>
-          }
-        />
-        <Route path="/" element={<Navigate to="/login" />} />
-      </Routes>
+      <AppContent />
     </Router>
   );
-}
+};
 
 export default App;

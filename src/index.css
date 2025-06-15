@@ -2,3 +2,128 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Basic styling for the entire application */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  font-family: 'Arial', sans-serif; /* Example font */
+  transition: background-color 0.3s ease, color 0.3s ease;
+  overflow-x: hidden; /* Prevent horizontal scrolling */
+  overflow-y: auto; /* Allow vertical scrolling */
+}
+
+/* Apply background to html for full page coverage, especially with scrolling content */
+html {
+  background-color: var(--bg-primary);
+}
+
+/* Define CSS variables for dark mode (default) */
+body.dark {
+  --bg-primary: #0f0f0f;
+  --bg-secondary: #1a1a1f;
+  --text-primary: #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.7);
+  --accent-cyan: #00f2ff;
+  --accent-cyan-rgb: 0, 242, 255;
+  --accent-pink: #ff2d75;
+  --accent-pink-rgb: 255, 45, 117; /* Approximate RGB for #ff2d75 */
+  --color-success: #48bb78;
+  --color-error: #f56565;
+  --input-bg: rgba(255, 255, 255, 0.03);
+  --input-border: rgba(255, 255, 255, 0.1);
+  --input-focus-bg: rgba(0, 242, 255, 0.03);
+  --input-focus-shadow: rgba(0, 242, 255, 0.1);
+}
+
+/* Define CSS variables for light mode */
+body.light {
+  --bg-primary: #e0e0e0;
+  --bg-secondary: #f0f0f0;
+  --text-primary: #333333;
+  --text-secondary: #666666;
+  --accent-cyan: #007bff;
+  --accent-cyan-rgb: 0, 123, 255;
+  --accent-pink: #dc3545;
+  --accent-pink-rgb: 220, 53, 69;
+  --color-success: #28a745;
+  --color-error: #dc3545;
+  --input-bg: rgba(0, 0, 0, 0.05);
+  --input-border: rgba(0, 0, 0, 0.2);
+  --input-focus-bg: rgba(0, 123, 255, 0.1);
+  --input-focus-shadow: rgba(0, 123, 255, 0.2);
+}
+
+/* Apply variables to common elements */
+.app-container {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh; /* Ensure app container spans full viewport height */
+  height: 100%; /* Ensure app container spans full height */
+}
+
+/* Example: apply to a common box/card element */
+.register-box, .login-box, .qr-box, .inventory-item-card {
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+/* Example: input fields */
+.input-box input, .input-box select, .password-input-container input {
+  background: var(--input-bg);
+  border-color: var(--input-border);
+  color: var(--text-primary);
+}
+
+.input-box input:focus, .input-box select:focus, .password-input-container input:focus {
+  border-color: var(--accent-cyan);
+  background: var(--input-focus-bg);
+  box-shadow: 0 0 0 4px var(--input-focus-shadow);
+}
+
+/* Example: buttons */
+.register-button, .login-button {
+  background: linear-gradient(135deg, var(--accent-cyan), var(--accent-cyan)); /* Simplification, you might want two accent colors */
+  color: var(--bg-secondary); /* Text color on buttons */
+}
+
+/* Example: error messages */
+.error-message {
+  background: rgba(var(--accent-pink-rgb), 0.1);
+  border: 1px solid rgba(var(--accent-pink-rgb), 0.3);
+  color: var(--accent-pink);
+}
+
+/* Example: links */
+.login-link a {
+  color: var(--accent-cyan);
+}
+
+/* Print-specific styles */
+@media print {
+  body > *:not(.printable-slip) {
+    display: none !important;
+  }
+  .printable-slip {
+    display: block !important;
+    position: fixed; /* Position fixed to ensure it's on top */
+    top: 0; /* Align to top */
+    left: 0; /* Align to left */
+    width: 100% !important;
+    height: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    background-color: #fff; /* Ensure white background for print */
+    color: #000; /* Ensure black text for print */
+    font-size: 12px; /* Adjust font size for print */
+  }
+  /* Hide the theme toggle button during print */
+  .fixed.bottom-4.right-4 {
+    display: none !important;
+  }
+}
+
+/* You will need to replace direct color values in your components' inline styles and classNames with these CSS variables. */
+
